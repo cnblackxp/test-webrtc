@@ -8,9 +8,12 @@
   Sanguis WEBRTC: can two players connect browser to browser with no game server?
   Hosted on GitHub Pages (https://cnblackxp.github.io/test-webrtc/), a normal web page, so
   nothing blocks WebRTC the way an embedded frame can.
-  1. Checks: WebRTC present, a connection inside this page, a STUN lookup.
-  2. Copy-paste signaling: the host's offer code goes to the joiner, the joiner's answer code
-     comes back, then a data channel opens directly between the two browsers.
+  1. The host presses Host and gets a link: this page plus #invite=<code> (the SDP offer).
+  2. The friend opens the link; the page reads the invite, makes a reply code (the SDP answer)
+     and cleans the invite out of the address bar.
+  3. The friend sends the reply back, the host pastes it, and a data channel opens directly
+     between the two browsers: Chat and Ping.
+  Checks (WebRTC present, a connection inside this page, a STUN lookup) sit in a collapsed box.
   No game code yet: if this connects, js/net/host-core.js can run over the data channel.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -33,25 +36,87 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--void); color: var(--bone); margin: 0;
   font-family: var(--font-ui); font-size: 18px; line-height: 1.4;
-  padding-block: 28px 48px;
+  padding-block: 20px 48px;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
+  overflow-x: hidden;
 }
-main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
-h1 { font-family: var(--font-display); font-weight: 700; font-size: 52px; line-height: 1; margin: 0; letter-spacing: 1px; text-wrap: balance; }
+main { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 48px; line-height: 1; margin: 0; letter-spacing: 1px; text-wrap: balance; }
 h1 span { color: var(--blood); }
-h2 { font-family: var(--font-display); font-weight: 700; font-size: 30px; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--font-display); font-weight: 700; font-size: 28px; margin: 0; text-wrap: balance; }
 .lede { color: var(--bone-dim); margin: 8px 0 0; max-width: 62ch; }
 section { display: flex; flex-direction: column; gap: 14px; }
-.panel { background: var(--stone); border: 1px solid var(--stone-2); border-radius: 4px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.label { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--bone-dim); font-weight: 700; }
+.panel { background: var(--stone); border: 1px solid var(--stone-2); border-radius: 4px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel p { margin: 0; }
+.label { font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--bone-dim); font-weight: 700; }
+.say { font-size: 22px; font-weight: 700; margin: 0; }
 
-.checks { display: flex; flex-direction: column; gap: 0; }
+/* Status line: sticky so it stays in view on a phone while scrolling. */
+.status {
+  position: sticky; top: 0; z-index: 5; display: flex; gap: 10px; align-items: center;
+  background: var(--stone); border: 1px solid var(--stone-2); border-left: 4px solid var(--bone-dim);
+  border-radius: 4px; padding: 10px 14px; font-weight: 600; font-size: 19px;
+}
+.status .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bone-dim); flex: none; }
+.status.wait { border-left-color: var(--brass); } .status.wait .dot { background: var(--brass); }
+.status.busy { border-left-color: var(--brass); } .status.busy .dot { background: var(--brass); animation: pulse 1s ease-in-out infinite alternate; }
+.status.ok { border-left-color: var(--mana); } .status.ok .dot { background: var(--mana); }
+.status.bad { border-left-color: var(--blood); } .status.bad .dot { background: var(--blood); }
+@keyframes pulse { to { opacity: 0.25; } }
+.stepper { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; font-weight: 700; }
+.stepper li { flex: 1; text-align: center; padding: 4px 2px; border-bottom: 3px solid var(--stone-2); color: var(--bone-dim); }
+.stepper li.done { border-color: var(--mana); color: var(--mana); }
+.stepper li.now { border-color: var(--brass); color: var(--bone); }
+
+.note { margin: 0; padding: 10px 14px; border-radius: 4px; border: 1px solid var(--brass); color: var(--bone); background: #1f1810; }
+.note.bad { border-color: var(--blood); background: #220c11; }
+.err { margin: 0; color: #ff8193; font-weight: 600; }
+
+button {
+  font: inherit; font-weight: 700; font-size: 18px; letter-spacing: 1px;
+  background: var(--stone-2); color: var(--bone); border: 1px solid var(--bone-dim); border-radius: 3px;
+  padding: 10px 18px; min-height: 48px; cursor: pointer; touch-action: manipulation;
+}
+button:hover:not(:disabled) { border-color: var(--bone); }
+button.primary { background: var(--blood); border-color: var(--blood); }
+button.primary:hover:not(:disabled) { background: #d61a38; }
+button.big { font-size: 24px; padding: 14px 28px; min-height: 60px; }
+button.quiet { background: transparent; }
+button:disabled { opacity: 0.45; cursor: default; }
+button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+textarea, input[type="text"] {
+  font-family: var(--font-code); font-size: 14px; width: 100%; min-width: 0;
+  background: #120d0f; color: var(--bone); border: 1px solid var(--stone-2); border-radius: 3px; padding: 10px;
+}
+textarea { min-height: 88px; resize: vertical; overflow-wrap: anywhere; word-break: break-all; }
+input[type="text"] { font-family: var(--font-ui); font-size: 18px; flex: 1 1 200px; min-height: 48px; }
+.meta { font-size: 15px; color: var(--bone-dim); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#qr { background: #fff; padding: 12px; border-radius: 4px; width: min(100%, 320px); align-self: center; }
+#qr svg { display: block; width: 100%; height: auto; }
+
+.banner { border-radius: 4px; padding: 16px; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--mana); background: #0f1f1c; }
+.banner b { font-family: var(--font-display); font-size: 34px; line-height: 1; color: var(--mana); }
+.banner.bad { border-color: var(--blood); background: #220c11; }
+.banner.bad b { color: #ff6b80; }
+.banner span { font-variant-numeric: tabular-nums; }
+
+#log { font-family: var(--font-code); font-size: 14px; background: #120d0f; border: 1px solid var(--stone-2); border-radius: 3px; padding: 10px; min-height: 140px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+#log .me { color: var(--brass); }
+#log .them { color: var(--mana); }
+#log .sys { color: var(--bone-dim); }
+
+details.checks-box summary { cursor: pointer; font-weight: 700; min-height: 32px; display: flex; align-items: center; gap: 8px; }
+details.checks-box summary::-webkit-details-marker { display: none; }
+details.checks-box summary::before { content: "▸"; color: var(--bone-dim); }
+details.checks-box[open] summary::before { content: "▾"; }
+.checks { display: flex; flex-direction: column; }
 .check { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--stone-2); }
-.check:first-child { border-top: 0; }
 .check b { font-weight: 700; }
 .check p { margin: 2px 0 0; color: var(--bone-dim); font-size: 16px; min-width: 0; overflow-wrap: anywhere; }
 .pill { font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 700; text-align: center; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--bone-dim); color: var(--bone-dim); }
@@ -59,115 +124,135 @@ section { display: flex; flex-direction: column; gap: 14px; }
 .pill.bad { border-color: var(--blood); color: #ff6b80; }
 .pill.wait { border-color: var(--brass); color: var(--brass); }
 
-.tabs { display: flex; gap: 8px; flex-wrap: wrap; }
-button {
-  font: inherit; font-weight: 700; font-size: 18px; letter-spacing: 1px;
-  background: var(--stone-2); color: var(--bone); border: 1px solid var(--bone-dim); border-radius: 3px;
-  padding: 8px 16px; cursor: pointer;
+/* "What they can see" */
+dialog {
+  background: var(--stone); color: var(--bone); border: 1px solid var(--bone-dim); border-radius: 6px;
+  padding: 0; width: min(640px, calc(100vw - 24px)); max-height: calc(100dvh - 24px);
 }
-button:hover:not(:disabled) { border-color: var(--bone); }
-button.primary { background: var(--blood); border-color: var(--blood); }
-button.primary:hover:not(:disabled) { background: #d61a38; }
-button[aria-pressed="true"] { border-color: var(--brass); color: var(--brass); }
-button:disabled { opacity: 0.45; cursor: default; }
-button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
-.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.step { display: flex; flex-direction: column; gap: 8px; }
-.step p { margin: 0; color: var(--bone-dim); font-size: 16px; }
-textarea, input[type="text"] {
-  font-family: var(--font-code); font-size: 13px; width: 100%; min-width: 0;
-  background: #120d0f; color: var(--bone); border: 1px solid var(--stone-2); border-radius: 3px; padding: 8px;
-}
-textarea { min-height: 76px; resize: vertical; overflow-wrap: anywhere; }
-input[type="text"] { font-family: var(--font-ui); font-size: 18px; flex: 1 1 200px; }
-.meta { font-size: 15px; color: var(--bone-dim); font-variant-numeric: tabular-nums; }
-.state { font-variant-numeric: tabular-nums; }
+dialog::backdrop { background: rgba(0, 0, 0, 0.75); }
+dialog .head { position: sticky; top: 0; background: var(--stone); display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--stone-2); }
+dialog .body { padding: 4px 16px 20px; }
+dialog h3 { font-family: var(--font-display); font-size: 24px; margin: 18px 0 8px; }
+dialog ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+dialog li { border-left: 3px solid var(--stone-2); padding-left: 10px; }
+dialog li code { font-family: var(--font-code); font-size: 14px; color: var(--brass); overflow-wrap: anywhere; word-break: break-all; }
+dialog li p { margin: 2px 0 0; color: var(--bone-dim); font-size: 16px; }
+dialog li.no { border-color: var(--mana); }
 
-#log { font-family: var(--font-code); font-size: 13px; background: #120d0f; border: 1px solid var(--stone-2); border-radius: 3px; padding: 8px; min-height: 120px; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
-#log .me { color: var(--brass); }
-#log .them { color: var(--mana); }
-#log .sys { color: var(--bone-dim); }
 @media (max-width: 480px) {
-  h1 { font-size: 40px; }
+  h1 { font-size: 38px; }
+  .row > button { flex: 1 1 auto; }
   .check { grid-template-columns: 1fr; gap: 4px; }
   .pill { justify-self: start; }
 }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
 <main>
   <header>
     <h1><span>S</span>anguis WebRTC</h1>
-    <p class="lede">Can two players connect browser to browser, with no game server between them? This page tests it in three checks, then lets two people try a real connection by swapping codes.</p>
+    <p class="lede">Two browsers, connected directly, with no game server between them.</p>
   </header>
 
-  <section aria-labelledby="checks-h">
-    <h2 id="checks-h">What this page can do</h2>
+  <div class="status" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="status-text">Starting…</span></div>
+  <ol class="stepper" id="stepper" hidden aria-label="Progress">
+    <li data-step="1">Invite</li><li data-step="2">Reply</li><li data-step="3">Connected</li>
+  </ol>
+  <noscript><p class="note bad">This page needs JavaScript to connect.</p></noscript>
+  <p class="note" id="support" hidden></p>
+
+  <!-- First screen: only Host. Joining happens by opening the host's link. -->
+  <section id="s-home" hidden>
     <div class="panel">
-      <div class="checks">
-        <div class="check"><span class="pill wait" id="c-api-pill">Testing</span><div><b>WebRTC in this page</b><p id="c-api">Looking for RTCPeerConnection…</p></div></div>
-        <div class="check"><span class="pill wait" id="c-loop-pill">Testing</span><div><b>A connection inside this page</b><p id="c-loop">Two connections in this tab, talking to each other. No network needed.</p></div></div>
-        <div class="check"><span class="pill wait" id="c-stun-pill">Testing</span><div><b>Finding this device's public address (STUN)</b><p id="c-stun">Asking Google's and Cloudflare's free STUN servers.</p></div></div>
-      </div>
-      <div class="row"><button id="rerun" type="button">Run the checks again</button><span class="meta" id="ua"></span></div>
+      <p>Press Host, send the link to a friend, and paste back the reply they send you.</p>
+      <button type="button" class="primary big" id="host">Host a game</button>
+      <p class="meta">Got a link from a friend? Just open it. It joins by itself.</p>
     </div>
   </section>
 
-  <section aria-labelledby="pair-h">
-    <h2 id="pair-h">Connect two players</h2>
+  <!-- Host: the link, then the reply box. -->
+  <section id="s-host" hidden>
     <div class="panel">
-      <p class="meta" style="margin:0">Open this page on two devices, or in two tabs. One player hosts, the other joins. Codes go through any messenger.</p>
-      <div class="tabs" role="group" aria-label="Role">
-        <button type="button" id="role-host" aria-pressed="false">I'm hosting</button>
-        <button type="button" id="role-join" aria-pressed="false">I'm joining</button>
+      <span class="label">1 · Send this link to your friend</span>
+      <textarea id="invite-link" readonly rows="4" placeholder="Making your link…" aria-label="Invite link"></textarea>
+      <div class="row">
+        <button type="button" class="primary" id="copy-link" disabled>Copy link</button>
+        <button type="button" id="share-link" hidden disabled>Share…</button>
+        <button type="button" id="qr-btn" disabled>Show QR code</button>
       </div>
+      <div id="qr" hidden></div>
+      <p class="meta" id="link-meta"></p>
+    </div>
+    <div class="panel">
+      <span class="label">2 · Paste your friend's reply here</span>
+      <textarea id="reply-in" placeholder="Paste the reply code your friend sends back" aria-label="Your friend's reply"></textarea>
+      <div class="row"><button type="button" class="primary" id="connect" disabled>Connect</button></div>
+      <p class="err" id="reply-err" role="alert" hidden></p>
+    </div>
+    <div class="row"><button type="button" class="quiet see">What they can see</button></div>
+  </section>
 
-      <div id="host" class="step" hidden>
-        <div class="step">
-          <span class="label">1 · Your invite code</span>
-          <p>Send this to the other player.</p>
-          <textarea id="host-offer" readonly placeholder="Making the invite code…"></textarea>
-          <div class="row"><button type="button" id="copy-offer" disabled>Copy invite code</button><span class="meta" id="offer-meta"></span></div>
-        </div>
-        <div class="step">
-          <span class="label">2 · Their reply code</span>
-          <p>Paste the code the other player sends back.</p>
-          <textarea id="host-answer" placeholder="Paste the reply code here"></textarea>
-          <div class="row"><button type="button" class="primary" id="accept-answer">Connect</button></div>
-        </div>
+  <!-- Joiner: opened the link; the reply goes back to the host. -->
+  <section id="s-join" hidden>
+    <div class="panel">
+      <span class="label">You've been invited to a game</span>
+      <p class="say">Send this back to the host.</p>
+      <textarea id="reply-out" readonly rows="4" placeholder="Making your reply…" aria-label="Your reply"></textarea>
+      <div class="row">
+        <button type="button" class="primary" id="copy-reply" disabled>Copy reply</button>
+        <button type="button" id="share-reply" hidden disabled>Share…</button>
       </div>
+      <p class="meta" id="reply-meta"></p>
+    </div>
+    <div class="row"><button type="button" class="quiet see">What they can see</button></div>
+  </section>
 
-      <div id="join" class="step" hidden>
-        <div class="step">
-          <span class="label">1 · The host's invite code</span>
-          <textarea id="join-offer" placeholder="Paste the invite code here"></textarea>
-          <div class="row"><button type="button" class="primary" id="make-answer">Make my reply code</button></div>
-        </div>
-        <div class="step">
-          <span class="label">2 · Your reply code</span>
-          <p>Send this back to the host. You connect when they paste it.</p>
-          <textarea id="join-answer" readonly placeholder="Your reply code appears here"></textarea>
-          <div class="row"><button type="button" id="copy-answer" disabled>Copy reply code</button><span class="meta" id="answer-meta"></span></div>
-        </div>
+  <!-- A broken, old or already-used invite. -->
+  <section id="s-bad" hidden>
+    <div class="panel">
+      <h2>This invite doesn't work</h2>
+      <p id="bad-text"></p>
+      <div class="row">
+        <button type="button" class="primary" id="bad-host">Host a new game instead</button>
+        <button type="button" id="bad-try" hidden>Try it anyway</button>
       </div>
-
-      <p class="state meta" id="conn-state" style="margin:0">Not connected.</p>
     </div>
   </section>
 
-  <section aria-labelledby="chan-h">
-    <h2 id="chan-h">The channel</h2>
+  <!-- Connected: banner, then the channel. -->
+  <section id="s-live" hidden>
+    <div class="banner" id="banner"><b id="banner-title">Connected</b><span id="banner-route">Checking the route…</span></div>
     <div class="panel">
-      <pre id="log" aria-live="polite"><span class="sys">Messages and connection events appear here.</span></pre>
+      <pre id="log" aria-live="polite"></pre>
       <form class="row" id="send-form">
-        <input type="text" id="msg" placeholder="Say something to the other player" autocomplete="off" disabled>
+        <input type="text" id="msg" placeholder="Say something to the other player" autocomplete="off" enterkeyhint="send" disabled>
         <button type="submit" id="send" disabled>Send</button>
         <button type="button" id="ping" disabled>Ping</button>
       </form>
     </div>
+    <div class="row"><button type="button" class="quiet see">What they can see</button></div>
   </section>
+
+  <!-- Shown when an attempt is over (failed, timed out, disconnected). -->
+  <div class="row" id="restart" hidden><button type="button" class="primary" id="again">Host a new game</button></div>
+
+  <details class="panel checks-box" id="checks-box">
+    <summary>Browser checks: <span id="checks-sum">testing…</span></summary>
+    <div class="checks">
+      <div class="check"><span class="pill wait" id="c-api-pill">Testing</span><div><b>WebRTC in this page</b><p id="c-api">Looking for RTCPeerConnection…</p></div></div>
+      <div class="check"><span class="pill wait" id="c-loop-pill">Testing</span><div><b>A connection inside this page</b><p id="c-loop">Two connections in this tab, talking to each other. No network needed.</p></div></div>
+      <div class="check"><span class="pill wait" id="c-stun-pill">Testing</span><div><b>Finding this device's public address (STUN)</b><p id="c-stun">Asking Google's and Cloudflare's free STUN servers.</p></div></div>
+    </div>
+    <div class="row"><button type="button" id="rerun">Run the checks again</button></div>
+    <p class="meta" id="ua"></p>
+  </details>
 </main>
+
+<dialog id="see-dlg" aria-labelledby="see-h">
+  <div class="head"><h2 id="see-h">What they can see</h2><button type="button" id="see-close">Close</button></div>
+  <div class="body" id="see-body"></div>
+</dialog>
 
 <script>
 (function () {
@@ -178,26 +263,56 @@ input[type="text"] { font-family: var(--font-ui); font-size: 18px; flex: 1 1 200
     GATHER_TIMEOUT_MS: 5000,   // stop waiting for more ICE candidates after this
     LOOP_TIMEOUT_MS: 6000,     // in-page connection check
     STUN_TIMEOUT_MS: 6000,
+    CONNECT_TIMEOUT_MS: 20000, // after the host presses Connect
+    INVITE_MAX_AGE_MS: 2 * 3600 * 1000, // older invites get a warning: the host's page is probably closed
+    STATS_EVERY_MS: 2000,
     CODE_PREFIX: { offer: 'SGO1.', answer: 'SGA1.' },
     CHANNEL: 'sanguis',
+    // Loaded only when "Show QR code" is pressed. Pinned version, checked with SRI.
+    QR_LIB: { src: 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js', integrity: 'sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k' },
+    USED_KEY: 'sanguis-answered-invites',
   };
   const $ = id => document.getElementById(id);
   const hasRTC = typeof window.RTCPeerConnection === 'function';
+  const canShare = typeof navigator.share === 'function';
+  // The page's own address, without the invite: what links are built from and what the bar is cleaned to.
+  const baseUrl = () => location.href.split('#')[0].split('?')[0];
 
   function setCheck(key, cls, text, detail) {
     const pill = $('c-' + key + '-pill');
     pill.className = 'pill ' + cls; pill.textContent = text;
     if (detail) $('c-' + key).textContent = detail;
+    const pills = ['api', 'loop', 'stun'].map(k => $('c-' + k + '-pill'));
+    const bad = pills.filter(p => /bad/.test(p.className)).length;
+    $('checks-sum').textContent = pills.some(p => p.textContent === 'Testing') ? 'testing…'
+      : bad ? bad + ' of 3 failed' : /Local/.test(pills[2].textContent) ? 'OK, local network only' : 'all good';
+    if (bad) $('checks-box').open = true;
   }
   function log(text, who) {
     const line = document.createElement('span');
     line.className = who || 'sys';
-    line.textContent = (log.started ? '\n' : '') + text;
-    if (!log.started) { $('log').textContent = ''; log.started = true; }
+    line.textContent = ($('log').childNodes.length ? '\n' : '') + text;
     $('log').appendChild(line);
     $('log').scrollTop = $('log').scrollHeight;
   }
   const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
+
+  // ---- status line, stepper, screens ----
+  function status(kind, text) {
+    $('status').className = 'status ' + kind;
+    $('status-text').textContent = text;
+  }
+  function step(n) {
+    $('stepper').hidden = !n;
+    $('stepper').querySelectorAll('li').forEach(li => {
+      const k = +li.dataset.step;
+      li.className = k < n ? 'done' : k === n ? 'now' : '';
+    });
+  }
+  function screen(name) {
+    ['home', 'host', 'join', 'bad', 'live'].forEach(s => { $('s-' + s).hidden = s !== name; });
+    $('restart').hidden = true;
+  }
 
   // Wait until the browser has listed its network addresses (or the timeout), so one code holds them all.
   function gathered(pc) {
@@ -211,42 +326,58 @@ input[type="text"] { font-family: var(--font-ui); font-size: 18px; flex: 1 1 200
   }
 
   // ---- codes: SDP, compressed when the browser can, base64url ----
+  // Small tags ride along as a=x-sanguis-<name>:<value> lines and are stripped again before the SDP
+  // is used: "made" (when the invite was made) and "for" (which invite a reply answers).
   const b64 = bytes => { let s = ''; bytes.forEach(b => { s += String.fromCharCode(b); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
   const unb64 = str => { const s = atob(str.replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(s, c => c.charCodeAt(0)); };
   async function pipe(bytes, stream) { return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer()); }
   const canZip = typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
   // Lines a data-channel-only connection doesn't need.
   const slim = sdp => sdp.split('\r\n').filter(l => l && !/^a=(extmap|rtcp|ssrc|msid-semantic)/.test(l)).join('\r\n') + '\r\n';
+  const codeError = (why, message) => Object.assign(new Error(message), { why });
 
-  async function encode(kind, desc) {
-    const raw = new TextEncoder().encode(slim(desc.sdp));
+  async function encode(kind, desc, tags) {
+    const extra = Object.entries(tags || {}).map(([k, v]) => 'a=x-sanguis-' + k + ':' + v + '\r\n').join('');
+    const raw = new TextEncoder().encode(slim(desc.sdp) + extra);
     const body = canZip ? 'z' + b64(await pipe(raw, new CompressionStream('deflate-raw'))) : 'p' + b64(raw);
     return CFG.CODE_PREFIX[kind] + body;
   }
-  async function decode(kind, code) {
-    code = (code || '').replace(/\s+/g, '');
-    const prefix = CFG.CODE_PREFIX[kind];
+  // Accepts the bare code or any text around it (a link, a share-sheet message).
+  async function decode(kind, text) {
+    const squashed = String(text || '').replace(/\s+/g, '');
+    if (!squashed) throw codeError('empty', kind === 'offer' ? 'The link has no invite in it.' : 'Paste the reply first.');
+    const found = squashed.match(/SG[OA]1\.[A-Za-z0-9_-]*/);
+    if (!found) throw codeError('junk', 'That doesn\'t look like a Sanguis code. Copy the whole thing and paste it again.');
+    const code = found[0], prefix = CFG.CODE_PREFIX[kind];
     if (!code.startsWith(prefix)) {
-      const other = kind === 'offer' ? 'reply' : 'invite';
-      if (code.startsWith(CFG.CODE_PREFIX[kind === 'offer' ? 'answer' : 'offer'])) throw new Error('That is a ' + other + ' code. Paste the ' + (kind === 'offer' ? 'invite' : 'reply') + ' code instead.');
-      throw new Error('That doesn\'t look like a Sanguis code. Copy the whole code and paste it again.');
+      throw codeError('wrong-kind', kind === 'offer' ? 'That is a reply code, not an invite link.' : 'That is an invite link, not a reply. Paste the reply your friend sends back.');
     }
     const body = code.slice(prefix.length);
-    let bytes = unb64(body.slice(1));
+    const damaged = () => codeError('damaged', 'That code is damaged or cut off. Copy the whole thing and try again.');
+    let bytes;
+    try { bytes = unb64(body.slice(1)); } catch (e) { throw damaged(); }
     if (body[0] === 'z') {
-      if (!canZip) throw new Error('This browser can\'t read compressed codes. Try a current Chrome, Firefox or Safari.');
-      bytes = await pipe(bytes, new DecompressionStream('deflate-raw'));
-    }
-    return { type: kind, sdp: new TextDecoder().decode(bytes) };
+      if (!canZip) throw codeError('no-zip', 'This browser can\'t read compressed codes. Try a current Chrome, Firefox or Safari.');
+      try { bytes = await pipe(bytes, new DecompressionStream('deflate-raw')); } catch (e) { throw damaged(); }
+    } else if (body[0] !== 'p') throw damaged();
+    const tags = {};
+    const sdp = new TextDecoder().decode(bytes).split('\r\n').filter(l => {
+      const m = l.match(/^a=x-sanguis-([a-z]+):(.*)$/);
+      if (m) tags[m[1]] = m[2];
+      return !m;
+    }).join('\r\n');
+    if (!sdp.startsWith('v=0') || !/\r\nm=application /.test(sdp)) throw damaged();
+    return { type: kind, sdp, tags, code };
   }
   const candidateTypes = sdp => [...new Set((sdp.match(/ typ (host|srflx|prflx|relay)/g) || []).map(s => s.slice(5)))];
+  const ufragOf = sdp => (sdp.match(/a=ice-ufrag:(\S+)/) || [])[1] || '';
 
   // ---- 1. checks ----
   async function runChecks() {
     ['api', 'loop', 'stun'].forEach(k => setCheck(k, 'wait', 'Testing'));
-    $('ua').textContent = navigator.userAgent.replace(/^Mozilla\/5\.0 /, '');
+    $('ua').textContent = 'This browser (shown only to you, never sent): ' + navigator.userAgent.replace(/^Mozilla\/5\.0 /, '');
     if (!hasRTC) {
-      setCheck('api', 'bad', 'Missing', 'RTCPeerConnection is not available in this page. The frame or browser has WebRTC switched off, so nothing below can work here.');
+      setCheck('api', 'bad', 'Missing', 'RTCPeerConnection is not available in this page. The browser has WebRTC switched off, so it can\'t connect.');
       setCheck('loop', 'bad', 'Skipped', 'Needs WebRTC.');
       setCheck('stun', 'bad', 'Skipped', 'Needs WebRTC.');
       return;
@@ -281,7 +412,7 @@ input[type="text"] { font-family: var(--font-ui); font-size: 18px; flex: 1 1 200
       const msg = await withTimeout(got, CFG.LOOP_TIMEOUT_MS, 'the message never arrived');
       setCheck('loop', 'ok', 'Works', 'A data channel opened and carried "' + msg + '" in ' + Math.round(performance.now() - t0) + ' ms.');
     } catch (e) {
-      setCheck('loop', 'bad', 'Failed', 'The two in-page connections could not talk: ' + e.message + '. This usually means the frame blocks WebRTC networking.');
+      setCheck('loop', 'bad', 'Failed', 'The two in-page connections could not talk: ' + e.message + '. This usually means the browser blocks WebRTC networking.');
     } finally { a.close(); b.close(); }
   }
 
@@ -304,132 +435,412 @@ input[type="text"] { font-family: var(--font-ui); font-size: 18px; flex: 1 1 200
 
   // ---- 2. pairing ----
   let pc = null, dc = null, role = null;
+  let inviteCode = '', everOpen = false, ended = false;
+  let connectTimer = 0, statsTimer = 0, lastPingMs = null;
+  const counts = { sent: 0, got: 0 };
 
   function reset() {
-    if (dc) try { dc.close(); } catch (e) {}
-    if (pc) try { pc.close(); } catch (e) {}
-    pc = dc = null; setChannelUI(false);
-    ['host-offer', 'host-answer', 'join-offer', 'join-answer'].forEach(id => { $(id).value = ''; });
-    $('offer-meta').textContent = $('answer-meta').textContent = '';
-    $('copy-offer').disabled = $('copy-answer').disabled = true;
-    $('conn-state').textContent = 'Not connected.';
+    const oldPc = pc, oldDc = dc;
+    pc = dc = null; // first, so the old connection's close events are ignored
+    if (oldDc) try { oldDc.close(); } catch (e) {}
+    if (oldPc) try { oldPc.close(); } catch (e) {}
+    clearTimeout(connectTimer); clearInterval(statsTimer);
+    everOpen = ended = false; lastPingMs = null; counts.sent = counts.got = 0;
+    inviteCode = '';
+    setChannelUI(false);
+    ['invite-link', 'reply-in', 'reply-out'].forEach(id => { $(id).value = ''; });
+    ['link-meta', 'reply-meta'].forEach(id => { $(id).textContent = ''; });
+    ['copy-link', 'share-link', 'qr-btn', 'connect', 'copy-reply', 'share-reply'].forEach(id => { $(id).disabled = true; });
+    $('qr').hidden = true; $('qr').textContent = ''; $('qr-btn').textContent = 'Show QR code';
+    $('reply-err').hidden = true;
+    $('log').textContent = '';
+    $('banner').className = 'banner'; $('banner-title').textContent = 'Connected'; $('banner-route').textContent = 'Checking the route…';
   }
 
   function newPc() {
     const p = new RTCPeerConnection({ iceServers: CFG.ICE_SERVERS });
-    p.onconnectionstatechange = async () => {
-      const st = p.connectionState;
-      let text = { new: 'Not connected.', connecting: 'Connecting…', connected: 'Connected.', disconnected: 'Connection lost. It may come back.', failed: 'Could not connect. The networks may need a relay (TURN) server.', closed: 'Closed.' }[st] || st;
-      if (st === 'connected') text += ' ' + await routeText(p);
-      $('conn-state').textContent = text;
-      log('connection: ' + st);
+    const update = () => {
+      if (p !== pc || ended) return;
+      const cs = p.connectionState || p.iceConnectionState, ice = p.iceConnectionState;
+      if (cs === 'failed' || ice === 'failed') {
+        if (everOpen) finish('Disconnected. The connection dropped.');
+        else noRoute();
+      } else if (cs === 'closed') {
+        if (everOpen) finish('Disconnected.');
+      } else if (cs === 'disconnected' || ice === 'disconnected') {
+        if (everOpen) status('wait', 'Connection unstable. Trying to recover…');
+      } else if (cs === 'connected' && everOpen) {
+        status('ok', 'Connected');
+      } else if (cs === 'connecting' || ice === 'checking') {
+        if (role === 'host' && p.remoteDescription) status('busy', 'Connecting…');
+        // Before the host pastes, the joiner's browser already starts probing; say so honestly.
+        if (role === 'join') status('busy', 'Connecting… (if the host hasn\'t pasted your reply yet, it waits for that)');
+      }
     };
+    p.addEventListener('connectionstatechange', update);
+    p.addEventListener('iceconnectionstatechange', update);
     return p;
   }
 
-  async function routeText(p) {
+  function noRoute() {
+    ended = true; clearTimeout(connectTimer);
+    if (pc) try { pc.close(); } catch (e) {}
+    status('bad', 'Couldn\'t connect directly. Your networks may need a relay. Try both on the same Wi-Fi.');
+    $('restart').hidden = false;
+  }
+
+  // The selected candidate pair: which addresses the connection really uses.
+  async function selectedPair(p) {
+    if (!p) return null;
+    const stats = await p.getStats(), all = new Map();
+    stats.forEach(s => all.set(s.id, s));
+    let pair = null;
+    all.forEach(s => { if (s.type === 'transport' && s.selectedCandidatePairId) pair = all.get(s.selectedCandidatePairId) || pair; });
+    if (!pair) all.forEach(s => { if (s.type === 'candidate-pair' && (s.selected || (s.nominated && s.state === 'succeeded'))) pair = s; });
+    if (!pair) return null;
+    const cand = c => c && { address: c.address || c.ip || '', port: c.port, type: c.candidateType, protocol: c.protocol };
+    return { rtt: pair.currentRoundTripTime, local: cand(all.get(pair.localCandidateId)), remote: cand(all.get(pair.remoteCandidateId)) };
+  }
+  function routeName(pair) {
+    const t = [pair.local && pair.local.type, pair.remote && pair.remote.type];
+    if (t.includes('relay')) return 'through a relay';
+    if (t[0] === 'host' && t[1] === 'host') return 'same network';
+    return 'through the router';
+  }
+  async function updateBanner() {
+    if (!pc || ended) return;
     try {
-      const stats = await p.getStats();
-      let pair = null; const cands = {};
-      stats.forEach(s => {
-        if (s.type === 'candidate-pair' && (s.selected || s.nominated) && s.state === 'succeeded') pair = s;
-        if (s.type === 'local-candidate' || s.type === 'remote-candidate') cands[s.id] = s;
-      });
-      if (!pair) return '';
-      const l = cands[pair.localCandidateId], r = cands[pair.remoteCandidateId];
-      const names = { host: 'same network', srflx: 'through the router (STUN)', prflx: 'through the router', relay: 'through a relay' };
-      return 'Route: ' + (names[l && l.candidateType] || (l && l.candidateType)) + ' ↔ ' + (names[r && r.candidateType] || (r && r.candidateType)) + (pair.currentRoundTripTime ? ', ' + Math.round(pair.currentRoundTripTime * 1000) + ' ms round trip.' : '.');
-    } catch (e) { return ''; }
+      const pair = await selectedPair(pc);
+      const rtt = pair && pair.rtt != null ? Math.round(pair.rtt * 1000) : lastPingMs;
+      const parts = [];
+      if (pair) parts.push('Route: ' + routeName(pair));
+      if (rtt != null) parts.push(rtt + ' ms round trip');
+      if (parts.length && !ended) $('banner-route').textContent = parts.join(' · ');
+    } catch (e) {}
   }
 
   function wireChannel(ch) {
     dc = ch;
-    ch.onopen = () => { setChannelUI(true); log('channel open. You can talk now.'); };
-    ch.onclose = () => { setChannelUI(false); log('channel closed'); };
+    ch.onopen = () => {
+      if (ch !== dc) return;
+      everOpen = true; clearTimeout(connectTimer);
+      screen('live'); step(0); status('ok', 'Connected');
+      setChannelUI(true); log('Connected. You can talk now.');
+      ch.send(JSON.stringify({ t: 'ping', at: performance.now(), quiet: true }));
+      updateBanner(); statsTimer = setInterval(updateBanner, CFG.STATS_EVERY_MS);
+    };
+    ch.onclose = () => { if (ch === dc) finish('Disconnected. The other player left or the connection dropped.'); };
     ch.onmessage = e => {
       let m; try { m = JSON.parse(e.data); } catch (err) { return; }
-      if (m.t === 'ping') ch.send(JSON.stringify({ t: 'pong', at: m.at }));
-      else if (m.t === 'pong') log('pong: ' + Math.round(performance.now() - m.at) + ' ms round trip');
-      else if (m.t === 'say') log('them: ' + String(m.text).slice(0, 500), 'them');
+      if (m.t === 'ping') ch.send(JSON.stringify({ t: 'pong', at: m.at, quiet: m.quiet }));
+      else if (m.t === 'pong') {
+        lastPingMs = Math.round(performance.now() - m.at);
+        if (!m.quiet) log('pong: ' + lastPingMs + ' ms round trip');
+      } else if (m.t === 'say') { counts.got++; log('them: ' + String(m.text).slice(0, 500), 'them'); }
+      else if (m.t === 'bye') finish('Disconnected. The other player closed their page.');
     };
+  }
+
+  // The attempt is over: say so and offer a fresh game.
+  function finish(text) {
+    if (ended) return;
+    ended = true; clearTimeout(connectTimer); clearInterval(statsTimer);
+    setChannelUI(false);
+    status('bad', text);
+    if (everOpen) {
+      $('banner').className = 'banner bad'; $('banner-title').textContent = 'Disconnected';
+      $('banner-route').textContent = text.replace(/^Disconnected\.\s*/, '') || 'The connection ended.';
+      log(text);
+    }
+    $('restart').hidden = false;
+    if (pc) try { pc.close(); } catch (e) {}
   }
 
   function setChannelUI(on) { ['msg', 'send', 'ping'].forEach(id => { $(id).disabled = !on; }); }
 
   async function startHost() {
-    reset(); pc = newPc();
-    wireChannel(pc.createDataChannel(CFG.CHANNEL, { ordered: true }));
+    reset(); role = 'host';
+    screen('host'); step(1); status('busy', 'Making your invite…');
+    const p = pc = newPc();
+    wireChannel(p.createDataChannel(CFG.CHANNEL, { ordered: true }));
     try {
-      await pc.setLocalDescription(await pc.createOffer());
-      await gathered(pc);
-      const code = await encode('offer', pc.localDescription);
-      $('host-offer').value = code; $('copy-offer').disabled = false;
-      $('offer-meta').textContent = code.length + ' characters · addresses: ' + (candidateTypes(pc.localDescription.sdp).join(', ') || 'none');
-      log('invite code ready (' + code.length + ' characters)');
-    } catch (e) { $('host-offer').value = ''; log('could not make an invite code: ' + e.message); }
+      await p.setLocalDescription(await p.createOffer());
+      await gathered(p);
+      if (p !== pc) return;
+      inviteCode = await encode('offer', p.localDescription, { made: Date.now() });
+      const link = baseUrl() + '#invite=' + inviteCode;
+      $('invite-link').value = link;
+      ['copy-link', 'share-link', 'qr-btn', 'connect'].forEach(id => { $(id).disabled = false; });
+      $('link-meta').textContent = link.length + ' characters · addresses inside: ' + (candidateTypes(p.localDescription.sdp).join(', ') || 'none') +
+        (canZip ? '' : ' · not compressed (this browser can\'t), so it is longer than usual');
+      step(2); status('wait', 'Waiting for reply. Send the link, then paste what your friend sends back.');
+    } catch (e) {
+      status('bad', 'Couldn\'t make an invite: ' + e.message);
+      $('restart').hidden = false;
+    }
   }
 
-  async function acceptAnswer() {
+  async function connect() {
+    const err = $('reply-err');
+    const say = msg => { err.textContent = msg; err.hidden = false; status('wait', 'Waiting for reply. ' + msg); };
+    err.hidden = true;
     if (!pc) return;
+    let desc;
+    try { desc = await decode('answer', $('reply-in').value); }
+    catch (e) {
+      if (e.why === 'wrong-kind' && inviteCode && $('reply-in').value.includes(inviteCode)) say('That is your own invite link. Paste the reply your friend sends back.');
+      else say(e.message);
+      return;
+    }
+    if (pc.signalingState !== 'have-local-offer') { say('This invite was already used. Press "Host a new game" for a new link.'); $('restart').hidden = false; return; }
+    if (desc.tags.for && desc.tags.for !== ufragOf(pc.localDescription.sdp)) {
+      say('That reply is for a different invite. Ask your friend to open your newest link and send the new reply.');
+      return;
+    }
+    try { await pc.setRemoteDescription({ type: 'answer', sdp: desc.sdp }); }
+    catch (e) { say('The reply is damaged and can\'t be used (' + e.message + '). Ask your friend to copy it again.'); return; }
+    $('connect').disabled = true;
+    step(3); status('busy', 'Connecting…');
+    const p = pc;
+    connectTimer = setTimeout(() => { if (p === pc && !everOpen && !ended) noRoute(); }, CFG.CONNECT_TIMEOUT_MS);
+  }
+
+  // ---- joining from a link ----
+  function usedInvites() { try { return JSON.parse(localStorage.getItem(CFG.USED_KEY)) || []; } catch (e) { return []; } }
+  function markUsed(ufrag) {
+    try { localStorage.setItem(CFG.USED_KEY, JSON.stringify(usedInvites().filter(u => u !== ufrag).concat(ufrag).slice(-30))); } catch (e) {}
+  }
+  function ago(ms) {
+    const m = Math.round(ms / 60000);
+    if (m < 90) return m + ' minutes';
+    const h = Math.round(m / 60);
+    return h < 48 ? h + ' hours' : Math.round(h / 24) + ' days';
+  }
+  function badInvite(text, offer) {
+    reset(); role = null;
+    screen('bad'); step(0);
+    $('bad-text').textContent = text;
+    $('bad-host').hidden = !hasRTC;
+    $('bad-try').hidden = !offer;
+    $('bad-try').onclick = offer ? () => makeAnswer(offer) : null;
+    status('bad', 'This invite doesn\'t work.');
+  }
+
+  function inviteFromUrl() {
+    const h = new URLSearchParams(location.hash.slice(1)), q = new URLSearchParams(location.search);
+    return h.has('invite') ? h.get('invite') : q.has('invite') ? q.get('invite') : null;
+  }
+
+  async function joinFromUrl() {
+    const raw = inviteFromUrl();
+    if (raw == null) return false;
+    // Clean the invite out of the address bar, so a refresh or a screenshot can't reuse it.
+    try { history.replaceState(null, '', baseUrl()); } catch (e) {}
+    if (!hasRTC) { badInvite('This browser can\'t make direct connections (WebRTC is missing or switched off), so it can\'t join. Open the link in a current Chrome, Firefox or Safari.'); return true; }
+    reset(); role = 'join';
+    screen('join'); step(1); status('busy', 'Reading the invite…');
+    let offer;
+    try { offer = await decode('offer', raw); }
+    catch (e) {
+      const why = { empty: 'The link is broken: it has no readable invite in it.', junk: 'The link is broken: it has no readable invite in it.',
+        damaged: 'The invite in this link is damaged or cut off (some chat apps shorten long links).' }[e.why] || e.message;
+      badInvite(why + ' Ask the host to send the whole link again, or host a game yourself.');
+      return true;
+    }
+    const age = Date.now() - Number(offer.tags.made);
+    if (usedInvites().includes(ufragOf(offer.sdp))) {
+      badInvite('You already answered this invite in this browser. Each invite connects one time, so it is probably used up. Ask the host for a new link, or host a game yourself.', offer);
+    } else if (age > CFG.INVITE_MAX_AGE_MS) {
+      badInvite('This invite is old: it was made ' + ago(age) + ' ago. An invite only works while the host\'s page stays open, so it has probably expired. Ask the host for a new link, or host a game yourself.', offer);
+    } else {
+      await makeAnswer(offer);
+    }
+    return true;
+  }
+
+  async function makeAnswer(offer) {
+    reset(); role = 'join';
+    screen('join'); step(1); status('busy', 'Making your reply…');
+    const p = pc = newPc();
+    p.ondatachannel = e => { if (p === pc) wireChannel(e.channel); };
     try {
-      const desc = await decode('answer', $('host-answer').value);
-      if (pc.signalingState !== 'have-local-offer') throw new Error('This invite was already used. Click "I\'m hosting" for a new one.');
-      await pc.setRemoteDescription(desc);
-      log('reply code accepted, connecting…');
-    } catch (e) { log(e.message); }
+      await p.setRemoteDescription({ type: 'offer', sdp: offer.sdp });
+      await p.setLocalDescription(await p.createAnswer());
+      await gathered(p);
+      if (p !== pc) return;
+      const code = await encode('answer', p.localDescription, { for: ufragOf(offer.sdp) });
+      markUsed(ufragOf(offer.sdp));
+      $('reply-out').value = code;
+      $('copy-reply').disabled = $('share-reply').disabled = false;
+      $('reply-meta').textContent = code.length + ' characters · addresses inside: ' + (candidateTypes(p.localDescription.sdp).join(', ') || 'none');
+      step(2);
+      if (!everOpen && !ended) status('wait', 'Waiting for the host to paste your reply.');
+    } catch (e) {
+      badInvite('The invite couldn\'t be used: ' + e.message + '. Ask the host for a new link, or host a game yourself.');
+    }
   }
 
-  async function makeAnswer() {
-    const invite = $('join-offer').value.trim();
-    reset(); $('join-offer').value = invite;
-    try {
-      const desc = await decode('offer', invite);
-      pc = newPc();
-      pc.ondatachannel = e => wireChannel(e.channel);
-      await pc.setRemoteDescription(desc);
-      await pc.setLocalDescription(await pc.createAnswer());
-      await gathered(pc);
-      const code = await encode('answer', pc.localDescription);
-      $('join-answer').value = code; $('copy-answer').disabled = false;
-      $('answer-meta').textContent = code.length + ' characters · addresses: ' + (candidateTypes(pc.localDescription.sdp).join(', ') || 'none');
-      log('reply code ready. Send it to the host.');
-    } catch (e) { log(e.message); }
-  }
-
-  function pickRole(r) {
-    role = r;
-    $('role-host').setAttribute('aria-pressed', r === 'host');
-    $('role-join').setAttribute('aria-pressed', r === 'join');
-    $('host').hidden = r !== 'host'; $('join').hidden = r !== 'join';
-    if (!hasRTC) { log('This page has no WebRTC, so it can\'t connect.'); return; }
-    if (r === 'host') startHost(); else reset();
-  }
-
+  // ---- sharing ----
   function copy(id, btn) {
     const ta = $(id), label = btn.textContent;
     const ok = () => { btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = label; }, 1500); };
     const fallback = () => { ta.focus(); ta.select(); btn.textContent = 'Selected: copy it now'; setTimeout(() => { btn.textContent = label; }, 2500); };
     try { navigator.clipboard.writeText(ta.value).then(ok, fallback); } catch (e) { fallback(); }
   }
+  function share(data, id, btn) {
+    navigator.share(data).catch(e => { if (e.name !== 'AbortError') copy(id, btn); });
+  }
+  let qrLoading = null;
+  function loadQr() {
+    if (window.qrcode) return Promise.resolve();
+    return qrLoading = qrLoading || new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = CFG.QR_LIB.src; s.integrity = CFG.QR_LIB.integrity; s.crossOrigin = 'anonymous';
+      s.onload = res; s.onerror = () => { qrLoading = null; rej(new Error('load failed')); };
+      document.head.appendChild(s);
+    });
+  }
+  async function toggleQr() {
+    const box = $('qr'), btn = $('qr-btn');
+    if (!box.hidden) { box.hidden = true; btn.textContent = 'Show QR code'; return; }
+    btn.disabled = true; btn.textContent = 'Loading…';
+    try {
+      await loadQr();
+      const qr = window.qrcode(0, 'L');
+      qr.addData($('invite-link').value); qr.make();
+      box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true, alt: 'QR code of the invite link' });
+      box.hidden = false; btn.textContent = 'Hide QR code';
+    } catch (e) {
+      btn.textContent = 'Show QR code';
+      $('link-meta').textContent = 'Couldn\'t load the QR code maker (offline?). Copy or share the link instead.';
+    } finally { btn.disabled = false; }
+  }
 
-  $('role-host').onclick = () => pickRole('host');
-  $('role-join').onclick = () => pickRole('join');
-  $('copy-offer').onclick = e => copy('host-offer', e.currentTarget);
-  $('copy-answer').onclick = e => copy('join-answer', e.currentTarget);
-  $('accept-answer').onclick = acceptAnswer;
-  $('make-answer').onclick = makeAnswer;
+  // ---- "What they can see": built from this connection's real data ----
+  const PRIVATE = /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|fe80:|f[cd][0-9a-f]{2}:|::1$)/i;
+  function sdpCandidates(sdp) {
+    const out = [];
+    (sdp || '').split(/\r?\n/).forEach(l => {
+      const m = l.match(/^a=candidate:\S+ \d+ (\S+) \d+ (\S+) (\d+) typ (\S+)/);
+      if (m && !out.some(c => c.address === m[2] && c.port === m[3])) out.push({ protocol: m[1].toLowerCase(), address: m[2], port: m[3], type: m[4] });
+    });
+    return out;
+  }
+  function explainCandidate(c, whose) {
+    const W = whose[0].toUpperCase() + whose.slice(1);
+    if (/\.local$/i.test(c.address)) return 'A made-up name (mDNS) the browser uses instead of ' + whose + ' local address, so that address stays hidden.';
+    if (c.type === 'host' && PRIVATE.test(c.address)) return W + ' device\'s address inside ' + whose + ' own network (Wi-Fi or LAN). It means little outside that network.';
+    if (c.type === 'host') return W + ' device\'s own address, and it is a public one' + (c.address.includes(':') ? ' (common with IPv6)' : '') + ', so it points at ' + whose + ' internet connection.';
+    if (c.type === 'srflx') return W + ' public internet address, as a STUN server saw it. Like visiting any website, it shows ' + whose + ' internet provider and rough area.';
+    if (c.type === 'prflx') return 'An address learned while connecting, usually ' + whose + ' public address as the other side saw it.';
+    if (c.type === 'relay') return 'The address of a relay server passing traffic on, not ' + whose + ' own.';
+    return 'A network address of type ' + c.type + '.';
+  }
+  function engineOf(sdp) {
+    const o = ((sdp || '').match(/^o=.*$/m) || [''])[0];
+    if (/mozilla/i.test(o)) return { name: 'Firefox', o };
+    if (/^o=- \d+ \d+ IN IP4 127\.0\.0\.1/.test(o)) return { name: 'Chrome, Edge or Safari (they share one WebRTC engine)', o };
+    return { name: 'unknown', o };
+  }
+  function item(list, title, text, cls) {
+    const li = document.createElement('li');
+    if (cls) li.className = cls;
+    const code = document.createElement('code'); code.textContent = title;
+    const p = document.createElement('p'); p.textContent = text;
+    li.append(code, p); list.appendChild(li);
+  }
+  function block(body, heading, fill) {
+    const h = document.createElement('h3'); h.textContent = heading;
+    const ul = document.createElement('ul'); fill(ul);
+    body.append(h, ul);
+    return ul;
+  }
+  function describeSide(ul, sdp, live, whose, chatCount, chatText) {
+    if (!sdp) { item(ul, 'Nothing yet', 'This fills in once the reply arrives.'); return; }
+    sdpCandidates(sdp).forEach(c => item(ul, c.address + ' port ' + c.port + ' (' + c.type + ', ' + c.protocol + ')', explainCandidate(c, whose), 'addr'));
+    if (live && live.address) item(ul, live.address + ' port ' + live.port + ' (' + live.type + ', in use now)', 'The address this connection actually uses right now. Every packet carries it, so the other side sees it as well.', 'addr live');
+    const fp = (sdp.match(/^a=fingerprint:(\S+) (\S+)/m) || []);
+    if (fp[2]) item(ul, 'DTLS ' + fp[1] + ' ' + fp[2], 'The fingerprint of a throwaway encryption certificate the browser made for this connection. It checks the encryption and isn\'t tied to ' + whose + ' identity.');
+    const eng = engineOf(sdp);
+    item(ul, 'Browser engine: ' + eng.name, 'The way the setup text is written (' + eng.o + ') hints at which browser engine is used, about what any website learns.');
+    item(ul, 'User agent: not sent', 'This page doesn\'t send the browser\'s name, version or device model.');
+    if (chatCount != null) item(ul, chatText + ': ' + chatCount, 'Everything typed in chat goes straight across, encrypted, and isn\'t saved anywhere.');
+  }
+  async function openSee() {
+    const body = $('see-body'); body.textContent = '';
+    let pair = null;
+    try { pair = await selectedPair(pc); } catch (e) {}
+    const local = pc && pc.localDescription && pc.localDescription.sdp;
+    const remote = pc && pc.remoteDescription && pc.remoteDescription.sdp;
+    const live = everOpen && !ended;
+    const intro = document.createElement('p'); intro.className = 'meta';
+    intro.textContent = pc ? 'Read from this connection right now: the setup text each side sent and the addresses in use.' : 'Nothing is connected yet. Press Host to make an invite, then open this again.';
+    body.appendChild(intro);
+    if (pc) {
+      block(body, role === 'host' && !remote ? 'What your invite link tells anyone who gets it' : 'What the other player can see about you', ul =>
+        describeSide(ul, local, pair && pair.local, 'your', live || everOpen ? counts.sent : null, 'Messages you sent'));
+      block(body, 'What you can see about them', ul =>
+        describeSide(ul, remote, pair && pair.remote, 'their', live || everOpen ? counts.got : null, 'Messages they sent'));
+    }
+    block(body, 'What is NOT shared', ul => {
+      item(ul, 'No files or photos', 'This connection only carries the text this page sends.', 'no');
+      item(ul, 'No camera or microphone', 'No audio or video is requested or sent.', 'no');
+      item(ul, 'No location', 'Nothing beyond what an IP address suggests, which is usually a city or internet provider.', 'no');
+      item(ul, 'No account info', 'No name, email, contacts or logins. There are no accounts.', 'no');
+    });
+    block(body, 'Privacy and how long things last', ul => {
+      item(ul, 'The invite link holds the host\'s IP addresses', 'Anyone who gets the link, or reads it later in a chat history, can see them. The reply holds the joiner\'s addresses the same way.');
+      item(ul, 'An invite only works while the host\'s page is open', 'Closing the tab ends it for good: an old link can\'t connect to anyone, and nothing is stored on any server. GitHub Pages only serves this static page, and the #invite part of the link never reaches it.');
+      item(ul, 'Encrypted, and gone when a tab closes', 'The connection is encrypted (DTLS) and ends when either tab closes.');
+      item(ul, 'Fresh every time', 'Each press of Host makes a new invite.');
+    });
+    const dlg = $('see-dlg');
+    if (typeof dlg.showModal === 'function') { if (!dlg.open) dlg.showModal(); } else dlg.setAttribute('open', '');
+  }
+
+  // ---- wiring ----
+  $('host').onclick = startHost;
+  $('again').onclick = startHost;
+  $('bad-host').onclick = startHost;
+  $('connect').onclick = connect;
+  $('copy-link').onclick = e => copy('invite-link', e.currentTarget);
+  $('copy-reply').onclick = e => copy('reply-out', e.currentTarget);
+  $('share-link').hidden = $('share-reply').hidden = !canShare;
+  $('share-link').onclick = e => share({ title: 'Sanguis invite', text: 'Join my Sanguis game:', url: $('invite-link').value }, 'invite-link', e.currentTarget);
+  $('share-reply').onclick = e => share({ text: $('reply-out').value }, 'reply-out', e.currentTarget);
+  $('qr-btn').onclick = toggleQr;
   $('rerun').onclick = runChecks;
+  document.querySelectorAll('.see').forEach(b => { b.onclick = openSee; });
+  $('see-close').onclick = () => { const d = $('see-dlg'); if (d.close) d.close(); else d.removeAttribute('open'); };
+  $('see-dlg').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
   $('send-form').addEventListener('submit', e => {
     e.preventDefault();
     const text = $('msg').value.trim();
     if (!text || !dc || dc.readyState !== 'open') return;
-    dc.send(JSON.stringify({ t: 'say', text })); log('you: ' + text, 'me'); $('msg').value = '';
+    dc.send(JSON.stringify({ t: 'say', text })); counts.sent++; log('you: ' + text, 'me'); $('msg').value = '';
   });
   $('ping').onclick = () => { if (dc && dc.readyState === 'open') dc.send(JSON.stringify({ t: 'ping', at: performance.now() })); };
+  // Tell the other side right away when this page goes, instead of waiting for a timeout.
+  addEventListener('pagehide', () => { if (dc && dc.readyState === 'open') try { dc.send(JSON.stringify({ t: 'bye' })); } catch (e) {} });
+  addEventListener('hashchange', () => { if (inviteFromUrl() != null) joinFromUrl(); });
+
+  // Friendly notes for browsers that can't do it all.
+  if (!hasRTC) {
+    $('support').textContent = 'This browser can\'t make direct connections (WebRTC is missing or switched off). Try a current Chrome, Firefox or Safari.';
+    $('support').className = 'note bad'; $('support').hidden = false; $('host').disabled = true;
+  } else if (!canZip) {
+    $('support').textContent = 'This browser can\'t compress codes, so links and replies come out about twice as long. They still work.';
+    $('support').hidden = false;
+  }
 
   // For tools/webrtc-test.mjs (local browser test of this page).
-  window.SanguisRTC = { encode, decode, state: () => ({ pc: pc && pc.connectionState, dc: dc && dc.readyState }) };
+  window.SanguisRTC = { encode, decode, pair: () => selectedPair(pc), state: () => ({ role, pc: pc && pc.connectionState, dc: dc && dc.readyState }) };
   runChecks();
+  joinFromUrl().then(joined => {
+    if (joined) return;
+    screen('home'); step(0);
+    status('idle', hasRTC ? 'Press Host to start a game.' : 'This browser can\'t connect.');
+  });
 })();
 </script>
 </body>
