@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sanguis WEBRTC</title>
+<!--
+  Sanguis WEBRTC: can two players connect browser to browser with no game server?
+  Hosted on GitHub Pages (https://cnblackxp.github.io/test-webrtc/), a normal web page, so
+  nothing blocks WebRTC the way an embedded frame can.
+  1. Checks: WebRTC present, a connection inside this page, a STUN lookup.
+  2. Copy-paste signaling: the host's offer code goes to the joiner, the joiner's answer code
+     comes back, then a data channel opens directly between the two browsers.
+  No game code yet: if this connects, js/net/host-core.js can run over the data channel.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Grenze+Gotisch:wght@600;700&display=swap">
+<style>
+/* Layout: one narrow column, the game's crypt palette; single dark look, like the game itself. */
+:root {
+  --void: #0b0809;
+  --stone: #1c1618;
+  --stone-2: #2a2124;
+  --bone: #e6d9bf;
+  --bone-dim: #9a8d7a;
+  --blood: #c0142f;
+  --mana: #5fc4b4;
+  --brass: #e0aa4c;
+  --font-display: "Grenze Gotisch", Georgia, serif;
+  --font-ui: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+  --font-code: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--void); color: var(--bone); margin: 0;
+  font-family: var(--font-ui); font-size: 18px; line-height: 1.4;
+  padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 52px; line-height: 1; margin: 0; letter-spacing: 1px; text-wrap: balance; }
+h1 span { color: var(--blood); }
+h2 { font-family: var(--font-display); font-weight: 700; font-size: 30px; margin: 0; text-wrap: balance; }
+.lede { color: var(--bone-dim); margin: 8px 0 0; max-width: 62ch; }
+section { display: flex; flex-direction: column; gap: 14px; }
+.panel { background: var(--stone); border: 1px solid var(--stone-2); border-radius: 4px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.label { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--bone-dim); font-weight: 700; }
+
+.checks { display: flex; flex-direction: column; gap: 0; }
+.check { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--stone-2); }
+.check:first-child { border-top: 0; }
+.check b { font-weight: 700; }
+.check p { margin: 2px 0 0; color: var(--bone-dim); font-size: 16px; min-width: 0; overflow-wrap: anywhere; }
+.pill { font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 700; text-align: center; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--bone-dim); color: var(--bone-dim); }
+.pill.ok { border-color: var(--mana); color: var(--mana); }
+.pill.bad { border-color: var(--blood); color: #ff6b80; }
+.pill.wait { border-color: var(--brass); color: var(--brass); }
+
+.tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+button {
+  font: inherit; font-weight: 700; font-size: 18px; letter-spacing: 1px;
+  background: var(--stone-2); color: var(--bone); border: 1px solid var(--bone-dim); border-radius: 3px;
+  padding: 8px 16px; cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--bone); }
+button.primary { background: var(--blood); border-color: var(--blood); }
+button.primary:hover:not(:disabled) { background: #d61a38; }
+button[aria-pressed="true"] { border-color: var(--brass); color: var(--brass); }
+button:disabled { opacity: 0.45; cursor: default; }
+button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.step { display: flex; flex-direction: column; gap: 8px; }
+.step p { margin: 0; color: var(--bone-dim); font-size: 16px; }
+textarea, input[type="text"] {
+  font-family: var(--font-code); font-size: 13px; width: 100%; min-width: 0;
+  background: #120d0f; color: var(--bone); border: 1px solid var(--stone-2); border-radius: 3px; padding: 8px;
+}
+textarea { min-height: 76px; resize: vertical; overflow-wrap: anywhere; }
+input[type="text"] { font-family: var(--font-ui); font-size: 18px; flex: 1 1 200px; }
+.meta { font-size: 15px; color: var(--bone-dim); font-variant-numeric: tabular-nums; }
+.state { font-variant-numeric: tabular-nums; }
+
+#log { font-family: var(--font-code); font-size: 13px; background: #120d0f; border: 1px solid var(--stone-2); border-radius: 3px; padding: 8px; min-height: 120px; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+#log .me { color: var(--brass); }
+#log .them { color: var(--mana); }
+#log .sys { color: var(--bone-dim); }
+@media (max-width: 480px) {
+  h1 { font-size: 40px; }
+  .check { grid-template-columns: 1fr; gap: 4px; }
+  .pill { justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1><span>S</span>anguis WebRTC</h1>
+    <p class="lede">Can two players connect browser to browser, with no game server between them? This page tests it in three checks, then lets two people try a real connection by swapping codes.</p>
+  </header>
+
+  <section aria-labelledby="checks-h">
+    <h2 id="checks-h">What this page can do</h2>
+    <div class="panel">
+      <div class="checks">
+        <div class="check"><span class="pill wait" id="c-api-pill">Testing</span><div><b>WebRTC in this page</b><p id="c-api">Looking for RTCPeerConnection…</p></div></div>
+        <div class="check"><span class="pill wait" id="c-loop-pill">Testing</span><div><b>A connection inside this page</b><p id="c-loop">Two connections in this tab, talking to each other. No network needed.</p></div></div>
+        <div class="check"><span class="pill wait" id="c-stun-pill">Testing</span><div><b>Finding this device's public address (STUN)</b><p id="c-stun">Asking Google's and Cloudflare's free STUN servers.</p></div></div>
+      </div>
+      <div class="row"><button id="rerun" type="button">Run the checks again</button><span class="meta" id="ua"></span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="pair-h">
+    <h2 id="pair-h">Connect two players</h2>
+    <div class="panel">
+      <p class="meta" style="margin:0">Open this page on two devices, or in two tabs. One player hosts, the other joins. Codes go through any messenger.</p>
+      <div class="tabs" role="group" aria-label="Role">
+        <button type="button" id="role-host" aria-pressed="false">I'm hosting</button>
+        <button type="button" id="role-join" aria-pressed="false">I'm joining</button>
+      </div>
+
+      <div id="host" class="step" hidden>
+        <div class="step">
+          <span class="label">1 · Your invite code</span>
+          <p>Send this to the other player.</p>
+          <textarea id="host-offer" readonly placeholder="Making the invite code…"></textarea>
+          <div class="row"><button type="button" id="copy-offer" disabled>Copy invite code</button><span class="meta" id="offer-meta"></span></div>
+        </div>
+        <div class="step">
+          <span class="label">2 · Their reply code</span>
+          <p>Paste the code the other player sends back.</p>
+          <textarea id="host-answer" placeholder="Paste the reply code here"></textarea>
+          <div class="row"><button type="button" class="primary" id="accept-answer">Connect</button></div>
+        </div>
+      </div>
+
+      <div id="join" class="step" hidden>
+        <div class="step">
+          <span class="label">1 · The host's invite code</span>
+          <textarea id="join-offer" placeholder="Paste the invite code here"></textarea>
+          <div class="row"><button type="button" class="primary" id="make-answer">Make my reply code</button></div>
+        </div>
+        <div class="step">
+          <span class="label">2 · Your reply code</span>
+          <p>Send this back to the host. You connect when they paste it.</p>
+          <textarea id="join-answer" readonly placeholder="Your reply code appears here"></textarea>
+          <div class="row"><button type="button" id="copy-answer" disabled>Copy reply code</button><span class="meta" id="answer-meta"></span></div>
+        </div>
+      </div>
+
+      <p class="state meta" id="conn-state" style="margin:0">Not connected.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="chan-h">
+    <h2 id="chan-h">The channel</h2>
+    <div class="panel">
+      <pre id="log" aria-live="polite"><span class="sys">Messages and connection events appear here.</span></pre>
+      <form class="row" id="send-form">
+        <input type="text" id="msg" placeholder="Say something to the other player" autocomplete="off" disabled>
+        <button type="submit" id="send" disabled>Send</button>
+        <button type="button" id="ping" disabled>Ping</button>
+      </form>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  // Tunables for the test.
+  const CFG = {
+    ICE_SERVERS: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }],
+    GATHER_TIMEOUT_MS: 5000,   // stop waiting for more ICE candidates after this
+    LOOP_TIMEOUT_MS: 6000,     // in-page connection check
+    STUN_TIMEOUT_MS: 6000,
+    CODE_PREFIX: { offer: 'SGO1.', answer: 'SGA1.' },
+    CHANNEL: 'sanguis',
+  };
+  const $ = id => document.getElementById(id);
+  const hasRTC = typeof window.RTCPeerConnection === 'function';
+
+  function setCheck(key, cls, text, detail) {
+    const pill = $('c-' + key + '-pill');
+    pill.className = 'pill ' + cls; pill.textContent = text;
+    if (detail) $('c-' + key).textContent = detail;
+  }
+  function log(text, who) {
+    const line = document.createElement('span');
+    line.className = who || 'sys';
+    line.textContent = (log.started ? '\n' : '') + text;
+    if (!log.started) { $('log').textContent = ''; log.started = true; }
+    $('log').appendChild(line);
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+  const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
+
+  // Wait until the browser has listed its network addresses (or the timeout), so one code holds them all.
+  function gathered(pc) {
+    if (pc.iceGatheringState === 'complete') return Promise.resolve();
+    return new Promise(res => {
+      const done = () => { clearTimeout(t); pc.removeEventListener('icegatheringstatechange', on); res(); };
+      const on = () => { if (pc.iceGatheringState === 'complete') done(); };
+      const t = setTimeout(done, CFG.GATHER_TIMEOUT_MS);
+      pc.addEventListener('icegatheringstatechange', on);
+    });
+  }
+
+  // ---- codes: SDP, compressed when the browser can, base64url ----
+  const b64 = bytes => { let s = ''; bytes.forEach(b => { s += String.fromCharCode(b); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+  const unb64 = str => { const s = atob(str.replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(s, c => c.charCodeAt(0)); };
+  async function pipe(bytes, stream) { return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer()); }
+  const canZip = typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
+  // Lines a data-channel-only connection doesn't need.
+  const slim = sdp => sdp.split('\r\n').filter(l => l && !/^a=(extmap|rtcp|ssrc|msid-semantic)/.test(l)).join('\r\n') + '\r\n';
+
+  async function encode(kind, desc) {
+    const raw = new TextEncoder().encode(slim(desc.sdp));
+    const body = canZip ? 'z' + b64(await pipe(raw, new CompressionStream('deflate-raw'))) : 'p' + b64(raw);
+    return CFG.CODE_PREFIX[kind] + body;
+  }
+  async function decode(kind, code) {
+    code = (code || '').replace(/\s+/g, '');
+    const prefix = CFG.CODE_PREFIX[kind];
+    if (!code.startsWith(prefix)) {
+      const other = kind === 'offer' ? 'reply' : 'invite';
+      if (code.startsWith(CFG.CODE_PREFIX[kind === 'offer' ? 'answer' : 'offer'])) throw new Error('That is a ' + other + ' code. Paste the ' + (kind === 'offer' ? 'invite' : 'reply') + ' code instead.');
+      throw new Error('That doesn\'t look like a Sanguis code. Copy the whole code and paste it again.');
+    }
+    const body = code.slice(prefix.length);
+    let bytes = unb64(body.slice(1));
+    if (body[0] === 'z') {
+      if (!canZip) throw new Error('This browser can\'t read compressed codes. Try a current Chrome, Firefox or Safari.');
+      bytes = await pipe(bytes, new DecompressionStream('deflate-raw'));
+    }
+    return { type: kind, sdp: new TextDecoder().decode(bytes) };
+  }
+  const candidateTypes = sdp => [...new Set((sdp.match(/ typ (host|srflx|prflx|relay)/g) || []).map(s => s.slice(5)))];
+
+  // ---- 1. checks ----
+  async function runChecks() {
+    ['api', 'loop', 'stun'].forEach(k => setCheck(k, 'wait', 'Testing'));
+    $('ua').textContent = navigator.userAgent.replace(/^Mozilla\/5\.0 /, '');
+    if (!hasRTC) {
+      setCheck('api', 'bad', 'Missing', 'RTCPeerConnection is not available in this page. The frame or browser has WebRTC switched off, so nothing below can work here.');
+      setCheck('loop', 'bad', 'Skipped', 'Needs WebRTC.');
+      setCheck('stun', 'bad', 'Skipped', 'Needs WebRTC.');
+      return;
+    }
+    try {
+      const pc = new RTCPeerConnection();
+      pc.createDataChannel('probe'); pc.close();
+      setCheck('api', 'ok', 'Present', 'RTCPeerConnection and data channels are available.');
+    } catch (e) {
+      setCheck('api', 'bad', 'Blocked', 'RTCPeerConnection exists but refused to start: ' + e.message);
+      setCheck('loop', 'bad', 'Skipped', 'Needs WebRTC.'); setCheck('stun', 'bad', 'Skipped', 'Needs WebRTC.');
+      return;
+    }
+    loopCheck(); stunCheck();
+  }
+
+  async function loopCheck() {
+    const a = new RTCPeerConnection(), b = new RTCPeerConnection();
+    a.onicecandidate = e => e.candidate && b.addIceCandidate(e.candidate).catch(() => {});
+    b.onicecandidate = e => e.candidate && a.addIceCandidate(e.candidate).catch(() => {});
+    try {
+      const t0 = performance.now();
+      const dc = a.createDataChannel('loop');
+      const got = new Promise(res => { b.ondatachannel = e => { e.channel.onmessage = m => res(m.data); }; });
+      const open = new Promise(res => { dc.onopen = res; });
+      await a.setLocalDescription(await a.createOffer());
+      await b.setRemoteDescription(a.localDescription);
+      await b.setLocalDescription(await b.createAnswer());
+      await a.setRemoteDescription(b.localDescription);
+      await withTimeout(open, CFG.LOOP_TIMEOUT_MS, 'the channel never opened');
+      dc.send('blood for blood');
+      const msg = await withTimeout(got, CFG.LOOP_TIMEOUT_MS, 'the message never arrived');
+      setCheck('loop', 'ok', 'Works', 'A data channel opened and carried "' + msg + '" in ' + Math.round(performance.now() - t0) + ' ms.');
+    } catch (e) {
+      setCheck('loop', 'bad', 'Failed', 'The two in-page connections could not talk: ' + e.message + '. This usually means the frame blocks WebRTC networking.');
+    } finally { a.close(); b.close(); }
+  }
+
+  async function stunCheck() {
+    const pc = new RTCPeerConnection({ iceServers: CFG.ICE_SERVERS });
+    const found = [];
+    pc.onicecandidate = e => { if (e.candidate && e.candidate.candidate) found.push(e.candidate.candidate); };
+    try {
+      pc.createDataChannel('stun');
+      await pc.setLocalDescription(await pc.createOffer());
+      await withTimeout(gathered(pc), CFG.STUN_TIMEOUT_MS + 500, 'timed out');
+      const types = [...new Set(found.map(c => (c.match(/ typ (\w+)/) || [])[1]).filter(Boolean))];
+      if (types.includes('srflx')) setCheck('stun', 'ok', 'Works', 'Got a public address from STUN, so players on different networks can try to connect. Address types found: ' + types.join(', ') + '.');
+      else if (types.length) setCheck('stun', 'wait', 'Local only', 'Found only ' + types.join(', ') + ' addresses. Devices on the same Wi-Fi may connect; other networks probably won\'t.');
+      else setCheck('stun', 'bad', 'Nothing', 'The browser found no network addresses at all. Connections from this page will fail.');
+    } catch (e) {
+      setCheck('stun', 'bad', 'Failed', e.message);
+    } finally { pc.close(); }
+  }
+
+  // ---- 2. pairing ----
+  let pc = null, dc = null, role = null;
+
+  function reset() {
+    if (dc) try { dc.close(); } catch (e) {}
+    if (pc) try { pc.close(); } catch (e) {}
+    pc = dc = null; setChannelUI(false);
+    ['host-offer', 'host-answer', 'join-offer', 'join-answer'].forEach(id => { $(id).value = ''; });
+    $('offer-meta').textContent = $('answer-meta').textContent = '';
+    $('copy-offer').disabled = $('copy-answer').disabled = true;
+    $('conn-state').textContent = 'Not connected.';
+  }
+
+  function newPc() {
+    const p = new RTCPeerConnection({ iceServers: CFG.ICE_SERVERS });
+    p.onconnectionstatechange = async () => {
+      const st = p.connectionState;
+      let text = { new: 'Not connected.', connecting: 'Connecting…', connected: 'Connected.', disconnected: 'Connection lost. It may come back.', failed: 'Could not connect. The networks may need a relay (TURN) server.', closed: 'Closed.' }[st] || st;
+      if (st === 'connected') text += ' ' + await routeText(p);
+      $('conn-state').textContent = text;
+      log('connection: ' + st);
+    };
+    return p;
+  }
+
+  async function routeText(p) {
+    try {
+      const stats = await p.getStats();
+      let pair = null; const cands = {};
+      stats.forEach(s => {
+        if (s.type === 'candidate-pair' && (s.selected || s.nominated) && s.state === 'succeeded') pair = s;
+        if (s.type === 'local-candidate' || s.type === 'remote-candidate') cands[s.id] = s;
+      });
+      if (!pair) return '';
+      const l = cands[pair.localCandidateId], r = cands[pair.remoteCandidateId];
+      const names = { host: 'same network', srflx: 'through the router (STUN)', prflx: 'through the router', relay: 'through a relay' };
+      return 'Route: ' + (names[l && l.candidateType] || (l && l.candidateType)) + ' ↔ ' + (names[r && r.candidateType] || (r && r.candidateType)) + (pair.currentRoundTripTime ? ', ' + Math.round(pair.currentRoundTripTime * 1000) + ' ms round trip.' : '.');
+    } catch (e) { return ''; }
+  }
+
+  function wireChannel(ch) {
+    dc = ch;
+    ch.onopen = () => { setChannelUI(true); log('channel open. You can talk now.'); };
+    ch.onclose = () => { setChannelUI(false); log('channel closed'); };
+    ch.onmessage = e => {
+      let m; try { m = JSON.parse(e.data); } catch (err) { return; }
+      if (m.t === 'ping') ch.send(JSON.stringify({ t: 'pong', at: m.at }));
+      else if (m.t === 'pong') log('pong: ' + Math.round(performance.now() - m.at) + ' ms round trip');
+      else if (m.t === 'say') log('them: ' + String(m.text).slice(0, 500), 'them');
+    };
+  }
+
+  function setChannelUI(on) { ['msg', 'send', 'ping'].forEach(id => { $(id).disabled = !on; }); }
+
+  async function startHost() {
+    reset(); pc = newPc();
+    wireChannel(pc.createDataChannel(CFG.CHANNEL, { ordered: true }));
+    try {
+      await pc.setLocalDescription(await pc.createOffer());
+      await gathered(pc);
+      const code = await encode('offer', pc.localDescription);
+      $('host-offer').value = code; $('copy-offer').disabled = false;
+      $('offer-meta').textContent = code.length + ' characters · addresses: ' + (candidateTypes(pc.localDescription.sdp).join(', ') || 'none');
+      log('invite code ready (' + code.length + ' characters)');
+    } catch (e) { $('host-offer').value = ''; log('could not make an invite code: ' + e.message); }
+  }
+
+  async function acceptAnswer() {
+    if (!pc) return;
+    try {
+      const desc = await decode('answer', $('host-answer').value);
+      if (pc.signalingState !== 'have-local-offer') throw new Error('This invite was already used. Click "I\'m hosting" for a new one.');
+      await pc.setRemoteDescription(desc);
+      log('reply code accepted, connecting…');
+    } catch (e) { log(e.message); }
+  }
+
+  async function makeAnswer() {
+    const invite = $('join-offer').value.trim();
+    reset(); $('join-offer').value = invite;
+    try {
+      const desc = await decode('offer', invite);
+      pc = newPc();
+      pc.ondatachannel = e => wireChannel(e.channel);
+      await pc.setRemoteDescription(desc);
+      await pc.setLocalDescription(await pc.createAnswer());
+      await gathered(pc);
+      const code = await encode('answer', pc.localDescription);
+      $('join-answer').value = code; $('copy-answer').disabled = false;
+      $('answer-meta').textContent = code.length + ' characters · addresses: ' + (candidateTypes(pc.localDescription.sdp).join(', ') || 'none');
+      log('reply code ready. Send it to the host.');
+    } catch (e) { log(e.message); }
+  }
+
+  function pickRole(r) {
+    role = r;
+    $('role-host').setAttribute('aria-pressed', r === 'host');
+    $('role-join').setAttribute('aria-pressed', r === 'join');
+    $('host').hidden = r !== 'host'; $('join').hidden = r !== 'join';
+    if (!hasRTC) { log('This page has no WebRTC, so it can\'t connect.'); return; }
+    if (r === 'host') startHost(); else reset();
+  }
+
+  function copy(id, btn) {
+    const ta = $(id), label = btn.textContent;
+    const ok = () => { btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = label; }, 1500); };
+    const fallback = () => { ta.focus(); ta.select(); btn.textContent = 'Selected: copy it now'; setTimeout(() => { btn.textContent = label; }, 2500); };
+    try { navigator.clipboard.writeText(ta.value).then(ok, fallback); } catch (e) { fallback(); }
+  }
+
+  $('role-host').onclick = () => pickRole('host');
+  $('role-join').onclick = () => pickRole('join');
+  $('copy-offer').onclick = e => copy('host-offer', e.currentTarget);
+  $('copy-answer').onclick = e => copy('join-answer', e.currentTarget);
+  $('accept-answer').onclick = acceptAnswer;
+  $('make-answer').onclick = makeAnswer;
+  $('rerun').onclick = runChecks;
+  $('send-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const text = $('msg').value.trim();
+    if (!text || !dc || dc.readyState !== 'open') return;
+    dc.send(JSON.stringify({ t: 'say', text })); log('you: ' + text, 'me'); $('msg').value = '';
+  });
+  $('ping').onclick = () => { if (dc && dc.readyState === 'open') dc.send(JSON.stringify({ t: 'ping', at: performance.now() })); };
+
+  // For tools/webrtc-test.mjs (local browser test of this page).
+  window.SanguisRTC = { encode, decode, state: () => ({ pc: pc && pc.connectionState, dc: dc && dc.readyState }) };
+  runChecks();
+})();
+</script>
+</body>
+</html>
